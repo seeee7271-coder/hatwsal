@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Car, Check, Pencil, TrendingUp, Trash2, X, IdCard, User, MapPin, Truck, Clock, Loader2 } from 'lucide-react';
+import { Car, Check, Pencil, TrendingUp, Trash2, X, IdCard, User, MapPin, Truck, Clock, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { formatMoney, startOfCurrentMonthIso } from '@/lib/format';
 import { getApiErrorMessage, listCompletedTripsSince, setDriverStatus, type Driver } from '@/lib/api';
-import { deleteDriver, getDriverIdPhotoUrl } from '@/lib/adminApi';
+import { deleteDriver } from '@/lib/adminApi';
+import { useDriverIdPhotos, type PhotoState } from '@/context/DriverIdPhotosContext';
 import { DriverEditForm } from '@/screens/admin/DriverEditForm';
 
 type Props = {
@@ -13,14 +14,12 @@ type Props = {
   onChanged: () => void;
 };
 
-type PhotoState = { loading: boolean; url: string | null; error: string };
-
 export function DriversTab({ drivers, loading, error, onChanged }: Props) {
   const [monthly, setMonthly] = useState<Record<string, { trips: number; earnings: number }>>({});
   const [actionError, setActionError] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [photoStates, setPhotoStates] = useState<Record<string, { front: PhotoState; back: PhotoState }>>({});
+  const { getPhoto, requestPhotos, retryPhoto } = useDriverIdPhotos();
 
   const pending = drivers.filter((d) => d.status === 'pending');
   const others = drivers.filter((d) => d.status !== 'pending');
@@ -37,6 +36,10 @@ export function DriversTab({ drivers, loading, error, onChanged }: Props) {
       })
       .catch(() => setMonthly({}));
   }, [drivers]);
+
+  useEffect(() => {
+    drivers.filter((d) => d.status === 'pending').forEach(requestPhotos);
+  }, [drivers, requestPhotos]);
 
   const totalEarnings = Object.values(monthly).reduce((sum, m) => sum + m.earnings, 0);
   const totalTrips = Object.values(monthly).reduce((sum, m) => sum + m.trips, 0);
@@ -74,54 +77,6 @@ export function DriversTab({ drivers, loading, error, onChanged }: Props) {
   const handleSaved = () => {
     setEditingId(null);
     onChanged();
-  };
-
-  const getPhotoState = (driverId: string) => {
-    return photoStates[driverId] ?? {
-      front: { loading: false, url: null, error: '' },
-      back: { loading: false, url: null, error: '' },
-    };
-  };
-
-  const loadPhoto = async (driverId: string, side: 'front' | 'back', path: string | null) => {
-    if (!path) return;
-    setPhotoStates((prev) => {
-      const current = prev[driverId] ?? {
-        front: { loading: false, url: null, error: '' },
-        back: { loading: false, url: null, error: '' },
-      };
-      return {
-        ...prev,
-        [driverId]: {
-          ...current,
-          [side]: { loading: true, url: null, error: '' },
-        },
-      };
-    });
-    try {
-      const url = await getDriverIdPhotoUrl(path);
-      setPhotoStates((prev) => ({
-        ...prev,
-        [driverId]: {
-          ...prev[driverId],
-          [side]: { loading: false, url, error: '' },
-        },
-      }));
-    } catch {
-      setPhotoStates((prev) => {
-        const current = prev[driverId] ?? {
-          front: { loading: false, url: null, error: '' },
-          back: { loading: false, url: null, error: '' },
-        };
-        return {
-          ...prev,
-          [driverId]: {
-            ...current,
-            [side]: { loading: false, url: null, error: 'تعذر تحميل الصورة' },
-          },
-        };
-      });
-    }
   };
 
   return (
@@ -165,60 +120,57 @@ export function DriversTab({ drivers, loading, error, onChanged }: Props) {
             </span>
           </div>
 
-          {pending.map((d) => {
-            const state = getPhotoState(d.id);
-            return (
-              <div key={d.id} className="rounded-2xl border border-warning-500/30 bg-navy-800 p-4">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <p className="flex items-center gap-2 font-bold text-white">
-                      <User size={16} className="text-brand-400" />
-                      {d.name}
-                    </p>
-                    <p className="flex items-center gap-2 text-xs text-navy-400">
-                      <MapPin size={14} />
-                      {d.address || '-'}
-                    </p>
-                    <p className="flex items-center gap-2 text-xs text-navy-400">
-                      <Truck size={14} />
-                      {d.vehicleType}
-                    </p>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-warning-500/20 px-2.5 py-1 text-xs font-semibold text-warning-400">
-                    قيد الانتظار
-                  </span>
+          {pending.map((d) => (
+            <div key={d.id} className="rounded-2xl border border-warning-500/30 bg-navy-800 p-4">
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <p className="flex items-center gap-2 font-bold text-white">
+                    <User size={16} className="text-brand-400" />
+                    {d.name}
+                  </p>
+                  <p className="flex items-center gap-2 text-xs text-navy-400">
+                    <MapPin size={14} />
+                    {d.address || '-'}
+                  </p>
+                  <p className="flex items-center gap-2 text-xs text-navy-400">
+                    <Truck size={14} />
+                    {d.vehicleType}
+                  </p>
                 </div>
-
-                <div className="mt-3 grid grid-cols-2 gap-3 border-t border-navy-700 pt-3">
-                  <PhotoCard
-                    label="البطاقة (وجه)"
-                    photoState={state.front}
-                    onLoad={() => loadPhoto(d.id, 'front', d.idFrontPath)}
-                    hasPath={Boolean(d.idFrontPath)}
-                  />
-                  <PhotoCard
-                    label="البطاقة (ظهر)"
-                    photoState={state.back}
-                    onLoad={() => loadPhoto(d.id, 'back', d.idBackPath)}
-                    hasPath={Boolean(d.idBackPath)}
-                  />
-                </div>
-
-                <div className="mt-3 flex gap-2">
-                  <Button variant="success" size="sm" fullWidth disabled={busyId === d.id} onClick={() => changeStatus(d.id, 'approved')}>
-                    <span className="flex items-center justify-center gap-1">
-                      <Check size={16} /> قبول الطلب وتفعيل الحساب
-                    </span>
-                  </Button>
-                  <Button variant="danger" size="sm" fullWidth disabled={busyId === d.id} onClick={() => changeStatus(d.id, 'rejected')}>
-                    <span className="flex items-center justify-center gap-1">
-                      <X size={16} /> رفض الطلب
-                    </span>
-                  </Button>
-                </div>
+                <span className="shrink-0 rounded-full bg-warning-500/20 px-2.5 py-1 text-xs font-semibold text-warning-400">
+                  قيد الانتظار
+                </span>
               </div>
-            );
-          })}
+
+              <div className="mt-3 grid grid-cols-2 gap-3 border-t border-navy-700 pt-3">
+                <PhotoCard
+                  label="البطاقة (وجه)"
+                  photo={getPhoto(d.id, 'front')}
+                  hasPath={Boolean(d.idFrontPath)}
+                  onRetry={() => retryPhoto(d, 'front')}
+                />
+                <PhotoCard
+                  label="البطاقة (ظهر)"
+                  photo={getPhoto(d.id, 'back')}
+                  hasPath={Boolean(d.idBackPath)}
+                  onRetry={() => retryPhoto(d, 'back')}
+                />
+              </div>
+
+              <div className="mt-3 flex gap-2">
+                <Button variant="success" size="sm" fullWidth disabled={busyId === d.id} onClick={() => changeStatus(d.id, 'approved')}>
+                  <span className="flex items-center justify-center gap-1">
+                    <Check size={16} /> قبول الطلب وتفعيل الحساب
+                  </span>
+                </Button>
+                <Button variant="danger" size="sm" fullWidth disabled={busyId === d.id} onClick={() => changeStatus(d.id, 'rejected')}>
+                  <span className="flex items-center justify-center gap-1">
+                    <X size={16} /> رفض الطلب
+                  </span>
+                </Button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -300,50 +252,63 @@ export function DriversTab({ drivers, loading, error, onChanged }: Props) {
 
 function PhotoCard({
   label,
-  photoState,
-  onLoad,
-  hasPath = true,
+  photo,
+  hasPath,
+  onRetry,
 }: {
   label: string;
-  photoState: PhotoState | undefined;
-  onLoad: () => void;
-  hasPath?: boolean;
+  photo: PhotoState;
+  hasPath: boolean;
+  onRetry: () => void;
 }) {
-  const state: PhotoState = photoState ?? { loading: false, url: null, error: '' };
+  const [imageFailed, setImageFailed] = useState(false);
+
+  const retry = () => {
+    setImageFailed(false);
+    onRetry();
+  };
+
+  const url = photo.status === 'ready' && !imageFailed ? photo.url : null;
+  const showError = photo.status === 'error' || imageFailed;
+
   return (
     <div className="rounded-xl bg-navy-900 p-2">
       <p className="mb-2 text-center text-xs font-semibold text-navy-300">{label}</p>
-      {state.url ? (
-        <img
-          src={state.url}
-          alt={label}
-          className="h-32 w-full rounded-lg object-cover"
-          onError={(e) => { e.currentTarget.style.display = 'none'; }}
-        />
-      ) : state.loading ? (
-        <div className="flex h-32 items-center justify-center">
-          <Loader2 className="animate-spin text-navy-400" size={24} />
-        </div>
-      ) : !hasPath ? (
+      {!hasPath ? (
         <div className="flex h-32 flex-col items-center justify-center rounded-lg bg-navy-700 text-xs text-navy-500">
           <IdCard size={24} className="mb-1 opacity-50" />
           لا توجد صورة
         </div>
-      ) : state.error ? (
-        <div className="flex h-32 flex-col items-center justify-center rounded-lg bg-navy-700 text-xs text-error-400">
-          <IdCard size={24} className="mb-1 text-navy-500" />
-          {state.error}
+      ) : url ? (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block overflow-hidden rounded-lg"
+          title="فتح الصورة بالحجم الكامل"
+        >
+          <img
+            src={url}
+            alt={label}
+            className="h-32 w-full object-cover transition-transform duration-300 hover:scale-105"
+            onError={() => setImageFailed(true)}
+          />
+        </a>
+      ) : showError ? (
+        <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-lg bg-navy-700 text-xs text-error-400">
+          <IdCard size={24} className="text-navy-500" />
+          <span>تعذر تحميل الصورة</span>
+          <button
+            onClick={retry}
+            className="flex items-center gap-1 rounded-md bg-navy-600 px-2 py-1 text-navy-100 transition-colors hover:bg-navy-500"
+          >
+            <RefreshCw size={12} /> إعادة المحاولة
+          </button>
         </div>
       ) : (
-        <button
-          onClick={onLoad}
-          className="flex h-32 w-full items-center justify-center rounded-lg bg-navy-700 text-xs text-navy-300 transition-colors hover:bg-navy-600"
-        >
-          <span className="flex flex-col items-center gap-1">
-            <IdCard size={24} className="text-navy-400" />
-            عرض الصورة
-          </span>
-        </button>
+        <div className="flex h-32 items-center justify-center rounded-lg bg-navy-700">
+          <Loader2 className="animate-spin text-navy-400" size={24} />
+        </div>
       )}
     </div>
   );
