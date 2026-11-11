@@ -1,47 +1,57 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
-import {
-  getActiveAdminEmail,
-  getAdminEmails,
-  isValidEmail,
-  normalizeEmail,
-  setActiveAdminEmail,
-} from '@/lib/adminAccess';
-
-export type AdminSignInResult = 'ok' | 'invalid' | 'not_added';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import { supabase } from '@/lib/supabase';
+import { isCurrentUserAdmin } from '@/lib/adminApi';
 
 type AdminSessionValue = {
+  checking: boolean;
   isAdmin: boolean;
   adminEmail: string | null;
-  signInAsAdmin: (email: string) => AdminSignInResult;
-  signOutAdmin: () => void;
+  signOutAdmin: () => Promise<void>;
 };
 
 const AdminSessionContext = createContext<AdminSessionValue | null>(null);
 
 export function AdminSessionProvider({ children }: { children: ReactNode }) {
-  const [adminEmail, setAdminEmail] = useState<string | null>(() => getActiveAdminEmail());
+  const [session, setSession] = useState<Session | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [checking, setChecking] = useState(true);
 
-  const signInAsAdmin = (rawEmail: string): AdminSignInResult => {
-    const email = normalizeEmail(rawEmail);
-    if (!isValidEmail(email)) return 'invalid';
-    if (!getAdminEmails().includes(email)) return 'not_added';
-    setActiveAdminEmail(email);
-    setAdminEmail(email);
-    return 'ok';
-  };
+  useEffect(() => {
+    let active = true;
 
-  const signOutAdmin = () => {
-    setActiveAdminEmail(null);
-    setAdminEmail(null);
-  };
+    const applySession = async (next: Session | null) => {
+      const admin = next ? await isCurrentUserAdmin().catch(() => false) : false;
+      if (!active) return;
+      setSession(next);
+      setIsAdmin(admin);
+      setChecking(false);
+    };
 
-  const isAdmin = adminEmail !== null && getAdminEmails().includes(adminEmail);
+    void supabase.auth.getSession().then(({ data }) => applySession(data.session));
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, next) => {
+      void applySession(next);
+    });
 
-  return (
-    <AdminSessionContext.Provider value={{ isAdmin, adminEmail: isAdmin ? adminEmail : null, signInAsAdmin, signOutAdmin }}>
-      {children}
-    </AdminSessionContext.Provider>
+    return () => {
+      active = false;
+      subscription.subscription.unsubscribe();
+    };
+  }, []);
+
+  const value = useMemo<AdminSessionValue>(
+    () => ({
+      checking,
+      isAdmin,
+      adminEmail: isAdmin ? (session?.user.email ?? null) : null,
+      signOutAdmin: async () => {
+        await supabase.auth.signOut();
+      },
+    }),
+    [checking, isAdmin, session],
   );
+
+  return <AdminSessionContext.Provider value={value}>{children}</AdminSessionContext.Provider>;
 }
 
 export function useAdminSession(): AdminSessionValue {

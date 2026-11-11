@@ -1,0 +1,13 @@
+{
+  "projectId": "72763584",
+  "functions": {
+    "admin-send-code": {
+      "hasChanged": false,
+      "hash": "c86df20f587a5cf3f9d37f79d8c019bffc70901ef60044d9008bd283045c3f4f"
+    },
+    "driver-account": {
+      "hasChanged": false,
+      "hash": "ffed1bd029ec8a8bcff460fb187aa5c666d81bb2659aaafa5d9ac294fb9f7b3a"
+    }
+  }
+}

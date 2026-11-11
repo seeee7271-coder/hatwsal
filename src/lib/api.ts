@@ -354,6 +354,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   phone_taken: 'هذا الرقم مسجل لكابتن آخر',
   not_authorized: 'هذا الإجراء متاح للمديرين فقط',
   trip_completed: 'لا يمكن حذف رحلة مكتملة لأنها سجل مالي',
+  invalid_admin_email: 'البريد الإلكتروني للمدير غير صحيح',
+  admin_exists: 'هذا البريد مضاف كمدير بالفعل',
+  admin_not_found: 'هذا المدير غير موجود',
+  cannot_remove_main_admin: 'لا يمكن حذف المدير الرئيسي',
 };
 
 export function getApiErrorMessage(error: unknown, fallback: string): string {

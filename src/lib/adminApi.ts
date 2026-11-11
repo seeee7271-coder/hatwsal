@@ -248,3 +248,79 @@ export async function getDriverIdPhotoUrl(path: string): Promise<string> {
   return data.signedUrl;
 }
 
+export type AdminUser = {
+  id: string;
+  email: string;
+  isMain: boolean;
+  createdAt: string;
+};
+
+type AdminUserRow = {
+  id: string;
+  email: string;
+  is_main: boolean;
+  created_at: string;
+};
+
+export async function listAdmins(): Promise<AdminUser[]> {
+  const { data, error } = await supabase.rpc('admin_list_admins');
+  if (error) throw error;
+  return ((data ?? []) as AdminUserRow[]).map((row) => ({
+    id: row.id,
+    email: row.email,
+    isMain: row.is_main,
+    createdAt: row.created_at,
+  }));
+}
+
+export async function addAdmin(email: string): Promise<void> {
+  const { error } = await supabase.rpc('admin_add_admin', { p_email: email });
+  if (error) throw error;
+}
+
+export async function removeAdmin(adminId: string): Promise<void> {
+  const { error } = await supabase.rpc('admin_remove_admin', { p_admin_id: adminId });
+  if (error) throw error;
+}
+
+export async function isCurrentUserAdmin(): Promise<boolean> {
+  const { data, error } = await supabase.rpc('is_admin_user');
+  if (error) throw error;
+  return data === true;
+}
+
+export type AdminCodeRequestResult = 'sent' | 'not_added' | 'invalid' | 'rate_limited' | 'failed';
+
+const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SEND_CODE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-send-code`;
+
+export async function requestAdminCode(email: string): Promise<AdminCodeRequestResult> {
+  try {
+    const response = await fetch(SEND_CODE_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${ANON_KEY}`,
+        apikey: ANON_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email }),
+    });
+    const body = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+    if (response.ok && body?.ok === true) return 'sent';
+    if (body?.error === 'not_added') return 'not_added';
+    if (body?.error === 'invalid_email') return 'invalid';
+    if (body?.error === 'rate_limited') return 'rate_limited';
+    return 'failed';
+  } catch {
+    return 'failed';
+  }
+}
+
+export async function verifyAdminCode(email: string, code: string): Promise<boolean> {
+  const { error } = await supabase.auth.verifyOtp({ email, token: code, type: 'email' });
+  if (error) return false;
+  const admin = await isCurrentUserAdmin();
+  if (!admin) await supabase.auth.signOut();
+  return admin;
+}
+

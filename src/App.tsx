@@ -1,17 +1,20 @@
 import { useEffect } from 'react';
 import { useApp } from '@/context/AppContext';
+import { useAdminSession } from '@/context/AdminSessionContext';
 import { BANNER_HEIGHT_PX, hideBannerAd, initializeAds, showBannerAd } from '@/lib/admob';
 import { SplashScreen } from '@/screens/SplashScreen';
 import { RoleSelection } from '@/screens/RoleSelection';
 import { ClientPage } from '@/screens/ClientPage';
 import { DriverPage } from '@/screens/DriverPage';
 import { AdminPanel } from '@/screens/AdminPanel';
+import { AdminGmailLogin } from '@/screens/admin/AdminGmailLogin';
 import { ExitScreen } from '@/screens/ExitScreen';
 
 const BANNER_SCREENS = new Set(['client', 'driver']);
 
 function AppContent() {
   const { screen } = useApp();
+  const { checking, isAdmin } = useAdminSession();
   const showBanner = BANNER_SCREENS.has(screen);
 
   useEffect(() => {
@@ -39,7 +42,8 @@ function AppContent() {
       case 'driver':
         return <DriverPage />;
       case 'admin':
-        return <AdminPanel />;
+        if (checking) return null;
+        return isAdmin ? <AdminPanel /> : <AdminGmailLogin />;
       case 'exit':
         return <ExitScreen />;
       default:

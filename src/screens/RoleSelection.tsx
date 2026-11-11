@@ -1,13 +1,10 @@
-import { useState } from 'react';
 import { User, Car, Shield, ShieldCheck, Truck, LogOut } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { useAdminSession } from '@/context/AdminSessionContext';
-import { AdminGmailLogin } from '@/screens/admin/AdminGmailLogin';
 
 export function RoleSelection() {
   const { setScreen } = useApp();
   const { isAdmin, signOutAdmin } = useAdminSession();
-  const [showAdminLogin, setShowAdminLogin] = useState(false);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-navy-900 via-navy-800 to-navy-900 px-6 py-8">
@@ -71,21 +68,6 @@ export function RoleSelection() {
           </div>
         </button>
       </div>
-
-      {!isAdmin && (
-        <div className="mt-8">
-          {showAdminLogin ? (
-            <AdminGmailLogin onSuccess={() => setShowAdminLogin(false)} />
-          ) : (
-            <button
-              onClick={() => setShowAdminLogin(true)}
-              className="w-full py-2 text-xs text-white/40 transition-colors hover:text-white/70"
-            >
-              دخول المدير بالبريد
-            </button>
-          )}
-        </div>
-      )}
 
       <div className="mt-12 flex items-center justify-center gap-2 text-white/30">
         <Shield size={16} />
